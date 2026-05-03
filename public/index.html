@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TikTok Live Chat TTS</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -17,126 +17,118 @@
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    padding: 20px;
+    padding: 16px;
     gap: 12px;
   }
 
-  /* ── Panel Control ─────── */
+  /* ── Panel Control (Lebih ringan tanpa blur) ─────── */
   #control-panel {
     position: fixed;
     top: 0; left: 0; right: 0;
-    background: rgba(15, 15, 15, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(0, 242, 254, 0.3);
+    background: #111111;
+    border-bottom: 2px solid #00f2fe;
     padding: 16px 24px;
     display: flex;
     gap: 12px;
     align-items: center;
     z-index: 999;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
   }
 
   #control-panel input {
     flex: 1;
     max-width: 400px;
     padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 6px;
     color: #fff;
     font-size: 15px;
     font-family: 'Outfit', sans-serif;
     outline: none;
-    transition: all 0.3s ease;
+    transition: border-color 0.2s;
   }
-  #control-panel input:focus { 
-    border-color: #00f2fe;
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 0 15px rgba(0, 242, 254, 0.2);
-  }
+  #control-panel input:focus { border-color: #00f2fe; }
   #control-panel input::placeholder { color: #888; }
 
   #control-panel button {
     padding: 10px 24px;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     font-family: 'Outfit', sans-serif;
-    transition: all 0.2s ease;
+    transition: background 0.2s;
   }
-  #btn-start { background: linear-gradient(135deg, #ff0050, #cc0040); color: #fff; box-shadow: 0 4px 15px rgba(255, 0, 80, 0.3); }
-  #btn-start:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 0, 80, 0.4); }
-  #btn-stop { background: rgba(255, 255, 255, 0.1); color: #ccc; }
-  #btn-stop:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+  #btn-start { background: #ff0050; color: #fff; }
+  #btn-start:hover { background: #d90044; }
+  #btn-stop { background: #333; color: #ccc; }
+  #btn-stop:hover { background: #444; color: #fff; }
 
   #status-text {
     font-size: 14px;
     color: #aaa;
     margin-left: 10px;
-    font-weight: 400;
   }
   #status-text.ok { color: #4ade80; }
   #status-text.err { color: #f87171; }
 
-  /* ── Tutorial Card ─────────────────────────────────────────────────────── */
+  /* ── Tutorial Card (Desain Solid & Flat) ────────────────────────────── */
   #tutorial-card {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(20, 20, 20, 0.7);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    padding: 40px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-top: 4px solid #00f2fe;
+    border-radius: 12px;
+    padding: 32px;
     width: 90%;
-    max-width: 600px;
+    max-width: 650px;
     color: white;
     z-index: 900;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-    transition: opacity 0.5s ease, transform 0.5s ease;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    transition: opacity 0.3s ease;
   }
   #tutorial-card h1 {
-    font-size: 28px;
+    font-size: 24px;
     margin-bottom: 16px;
-    background: linear-gradient(135deg, #ff0050, #00f2fe);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #00f2fe;
   }
   #tutorial-card p {
-    font-size: 16px;
-    line-height: 1.6;
-    color: #ccc;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #ddd;
     margin-bottom: 12px;
   }
   #tutorial-card ul {
     margin-left: 20px;
     margin-bottom: 20px;
-    color: #bbb;
+    color: #ccc;
     line-height: 1.6;
+    font-size: 15px;
   }
   #tutorial-card .code {
-    background: rgba(0, 0, 0, 0.5);
-    padding: 2px 6px;
+    background: #000;
+    padding: 4px 8px;
     border-radius: 4px;
     font-family: monospace;
-    color: #00f2fe;
+    color: #ff0050;
+    font-size: 14px;
+    display: inline-block;
+    margin: 4px 0;
   }
   .hidden {
     opacity: 0 !important;
     pointer-events: none;
-    transform: translate(-50%, -45%) scale(0.95) !important;
   }
 
-  /* ── Chat Messages ─────────────────────────────────────────────────────── */
+  /* ── Chat Messages (Tanpa animasi berat) ──────────────────────────────── */
   #chat-container {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     max-height: 100vh;
     overflow: hidden;
     padding-top: 90px; /* Space for control panel */
@@ -151,59 +143,49 @@
   .chat-msg {
     display: flex;
     align-items: flex-start;
-    gap: 14px;
-    background: rgba(15, 15, 15, 0.65);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    gap: 12px;
+    background: rgba(15, 15, 15, 0.9);
+    border: 1px solid #222;
     border-left: 4px solid #00f2fe;
-    border-radius: 12px;
-    padding: 14px 18px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
-    max-width: 500px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-    transition: all 0.3s ease;
+    border-radius: 8px;
+    padding: 12px 16px;
+    animation: slideIn 0.2s ease-out both;
+    max-width: 450px;
   }
 
   .chat-msg.sys-msg {
     border-left-color: #ff0050;
-    background: rgba(255, 0, 80, 0.1);
+    background: rgba(30, 10, 15, 0.9);
   }
 
   .chat-msg.speaking {
     border-left-color: #4ade80;
-    background: rgba(74, 222, 128, 0.05);
-    box-shadow: 0 0 20px rgba(74, 222, 128, 0.2);
-    transform: translateX(10px);
+    background: rgba(20, 30, 20, 0.9);
   }
 
   .chat-msg.removing {
-    animation: slideOut 0.4s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards;
+    opacity: 0;
+    transition: opacity 0.2s;
   }
 
   @keyframes slideIn {
-    from { opacity: 0; transform: translateX(-30px) scale(0.9); }
-    to   { opacity: 1; transform: translateX(0) scale(1); }
-  }
-  @keyframes slideOut {
-    from { opacity: 1; transform: translateX(0) scale(1); height: auto; margin-bottom: 12px; }
-    to   { opacity: 0; transform: translateX(-30px) scale(0.9); height: 0; margin-bottom: 0; padding: 0; border: 0; }
+    from { transform: translateX(-15px); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
   }
 
   .avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #ff0050, #00f2fe);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #ff0050;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
     color: #fff;
     flex-shrink: 0;
     text-transform: uppercase;
-    box-shadow: 0 4px 10px rgba(0, 242, 254, 0.3);
   }
 
   .msg-body { flex: 1; min-width: 0; }
@@ -212,18 +194,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
 
   .username {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     color: #fff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 180px;
-    letter-spacing: 0.5px;
   }
 
   .sys-msg .username { color: #ff0050; }
@@ -231,49 +212,32 @@
   .tts-icon {
     font-size: 12px;
     opacity: 0;
-    transition: opacity 0.3s;
-    background: rgba(255,255,255,0.1);
-    border-radius: 50%;
-    padding: 4px;
   }
-  .speaking .tts-icon { opacity: 1; animation: pulse 0.8s ease infinite alternate; background: rgba(74, 222, 128, 0.2); }
-
-  @keyframes pulse {
-    from { transform: scale(0.9); }
-    to   { transform: scale(1.1); box-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
-  }
+  .speaking .tts-icon { opacity: 1; }
 
   .comment {
     font-size: 15px;
-    color: #ddd;
-    line-height: 1.5;
+    color: #eee;
+    line-height: 1.4;
     word-break: break-word;
-    font-weight: 300;
   }
 
   /* ── Queue badge ───────────────────────────────────────────────────────── */
   #queue-badge {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(0,0,0,0.6);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.1);
+    bottom: 16px;
+    right: 16px;
+    background: #111;
+    border: 1px solid #333;
     color: #fff;
-    font-size: 13px;
-    padding: 8px 16px;
-    border-radius: 999px;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
     display: none;
     font-weight: 600;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     z-index: 1000;
   }
-  #queue-badge.visible { display: block; animation: popIn 0.3s ease; }
-  
-  @keyframes popIn {
-    from { opacity: 0; transform: translateY(10px) scale(0.9); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
+  #queue-badge.visible { display: block; }
 </style>
 </head>
 <body>
@@ -289,20 +253,26 @@
 <!-- TUTORIAL CARD -->
 <div id="tutorial-card">
   <h1>TikTok Live Chat Reader</h1>
-  <p>Selamat datang! Alat ini akan membaca chat dari TikTok Live Anda dan mengubahnya menjadi suara (TTS) secara otomatis.</p>
-  <p><strong>Cara Penggunaan:</strong></p>
+  <p>Selamat datang! Alat ini akan membaca chat dari TikTok Live Anda dan mengubahnya menjadi suara (TTS).</p>
+  
+  <p><strong>Cara Penggunaan (Browser Biasa):</strong></p>
   <ul>
     <li>Masukkan Username TikTok yang sedang Live di panel atas.</li>
-    <li>Klik <strong>Mulai Mendengarkan</strong>. Chat akan mulai bermunculan dan suara akan diputar.</li>
+    <li>Klik <strong>Mulai Mendengarkan</strong>.</li>
   </ul>
-  <p><strong>Integrasi OBS:</strong></p>
+  
+  <p><strong>Cara Penggunaan (OBS Overlay):</strong></p>
   <ul>
-    <li>Tambahkan Browser Source di OBS dan masukkan URL: <span class="code">http://localhost:3000/?obs=1</span></li>
-    <li>Parameter <span class="code">?obs=1</span> akan menyembunyikan panel kontrol dan tutorial agar background menjadi transparan.</li>
+    <li>Tambahkan Browser Source di OBS dan masukkan URL dengan format berikut:
+        <br><span class="code">http://localhost:3000/?obs=1&username=NAMA_AKUN_TIKTOK</span>
+    </li>
+    <li>Ubah <span class="code">NAMA_AKUN_TIKTOK</span> dengan username akun yang sedang live.</li>
+    <li>Parameter <span class="code">?obs=1</span> berfungsi menyembunyikan panel atas dan kotak tutorial ini agar background menjadi sepenuhnya transparan.</li>
   </ul>
+
   <p><strong>Dukungan Lavalink:</strong></p>
   <ul>
-    <li>Alat ini juga menyediakan endpoint audio untuk bot musik/Lavalink pada: <span class="code">/audio/:id.mp3</span></li>
+    <li>Tersedia endpoint audio di: <span class="code">/audio/:id.mp3</span></li>
   </ul>
 </div>
 
@@ -336,7 +306,6 @@ socket.on('sys-message', (msg) => {
     tutorialCard.classList.add('hidden');
   }
   
-  // Tampilkan sebagai sistem message di chat container
   addSystemMessage("Sistem", msg);
 });
 
@@ -376,7 +345,7 @@ function pruneMessages() {
   if (msgs.length > MAX_MESSAGES) {
     const oldest = msgs[0];
     oldest.classList.add('removing');
-    setTimeout(() => oldest.remove(), 400);
+    setTimeout(() => oldest.remove(), 200);
   }
 }
 
@@ -449,13 +418,10 @@ function startListening() {
   }
   statusEl.textContent = 'Menghubungkan...';
   statusEl.className = '';
-  // Menggunakan event 'set-username' sesuai dengan index.js Project 37
   socket.emit('set-username', val);
 }
 
 function stopListening() {
-  // TikTok bot tidak memiliki event stop di backend saat ini, 
-  // kita disconnect socketnya dan muat ulang halaman.
   socket.disconnect();
   statusEl.textContent = 'Dihentikan. Memuat ulang...';
   statusEl.className = '';
