@@ -84,12 +84,15 @@ io.on('connection', (socket) => {
             // FIX: Pastikan koneksi ini masih yang aktif sebelum memproses
             if (tiktokLiveConnection !== currentConnection) return;
 
+            // Hilangkan '@' di awal nama jika ada
+            const username = String(data.uniqueId || '').replace(/^@/, '');
+
             let audioBase64 = null;
             let audioUrl = null;
             
             try {
                 // Teks yang akan dibacakan (Maksimal 200 karakter agar Google tidak error)
-                const textToSpeak = `${data.uniqueId} berkata, ${data.comment}`.substring(0, 200);
+                const textToSpeak = `${username} berkata, ${data.comment}`.substring(0, 200);
                 
                 // Ambil audio dari Google TTS di sisi Server
                 audioBase64 = await googleTTS.getAudioBase64(textToSpeak, {
@@ -114,7 +117,7 @@ io.on('connection', (socket) => {
 
             // Kirim chat dan file audio ke client
             socket.emit('chat', { 
-                username: data.uniqueId, 
+                username: username, 
                 comment: data.comment,
                 audioData: audioBase64 ? `data:audio/mp3;base64,${audioBase64}` : null,
                 audioUrl: audioUrl
