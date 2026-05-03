@@ -432,12 +432,12 @@ function startListening() {
 }
 
 function stopListening() {
-  socket.disconnect();
-  statusEl.textContent = 'Dihentikan. Memuat ulang...';
+  socket.emit('stop');
+  TTS_QUEUE.length = 0;
+  updateQueueBadge();
+  statusEl.textContent = 'Dihentikan.';
   statusEl.className = '';
-  setTimeout(() => {
-      window.location.reload();
-  }, 1000);
+  tutorialCard.classList.remove('hidden');
 }
 
 document.getElementById('username-input').addEventListener('keydown', (e) => {
