@@ -1,149 +1,480 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OBS TikTok Live Chat</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-        /* Tampilan Khusus OBS: Transparan & Aesthetic */
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; padding: 20px; 
-            background: transparent; /* Penting untuk OBS */
-            overflow: hidden; /* Hilangkan scrollbar di OBS */
-        }
-        
-        #btn-container {
-            margin-bottom: 20px;
-        }
-        button { 
-            padding: 12px 24px; 
-            background: #ff0050; 
-            color: white; 
-            border: none; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-weight: bold;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        button:hover { background: #cc0040; }
-        
-        #chatBox { 
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            height: 600px;
-            overflow-y: hidden;
-            justify-content: flex-end; /* Chat baru muncul dari bawah */
-        }
-        
-        .chat-msg { 
-            background: rgba(0, 0, 0, 0.7); 
-            color: white;
-            padding: 10px 15px; 
-            border-radius: 10px;
-            border-left: 4px solid #00f2fe;
-            animation: fadeIn 0.3s ease-in-out;
-            word-wrap: break-word;
-            font-size: 16px;
-            text-shadow: 1px 1px 2px black;
-        }
-        
-        .chat-msg strong { color: #00f2fe; }
-        .sys-msg { background: rgba(255, 165, 0, 0.8); border-left-color: #ff4500; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TikTok Live Chat TTS</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
+  body {
+    background: transparent;
+    font-family: 'Outfit', sans-serif;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 20px;
+    gap: 12px;
+  }
+
+  /* ── Panel Control ─────── */
+  #control-panel {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: rgba(15, 15, 15, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(0, 242, 254, 0.3);
+    padding: 16px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    z-index: 999;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  }
+
+  #control-panel input {
+    flex: 1;
+    max-width: 400px;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 15px;
+    font-family: 'Outfit', sans-serif;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  #control-panel input:focus { 
+    border-color: #00f2fe;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 15px rgba(0, 242, 254, 0.2);
+  }
+  #control-panel input::placeholder { color: #888; }
+
+  #control-panel button {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    transition: all 0.2s ease;
+  }
+  #btn-start { background: linear-gradient(135deg, #ff0050, #cc0040); color: #fff; box-shadow: 0 4px 15px rgba(255, 0, 80, 0.3); }
+  #btn-start:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 0, 80, 0.4); }
+  #btn-stop { background: rgba(255, 255, 255, 0.1); color: #ccc; }
+  #btn-stop:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+
+  #status-text {
+    font-size: 14px;
+    color: #aaa;
+    margin-left: 10px;
+    font-weight: 400;
+  }
+  #status-text.ok { color: #4ade80; }
+  #status-text.err { color: #f87171; }
+
+  /* ── Tutorial Card ─────────────────────────────────────────────────────── */
+  #tutorial-card {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(20, 20, 20, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 40px;
+    width: 90%;
+    max-width: 600px;
+    color: white;
+    z-index: 900;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  #tutorial-card h1 {
+    font-size: 28px;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #ff0050, #00f2fe);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  #tutorial-card p {
+    font-size: 16px;
+    line-height: 1.6;
+    color: #ccc;
+    margin-bottom: 12px;
+  }
+  #tutorial-card ul {
+    margin-left: 20px;
+    margin-bottom: 20px;
+    color: #bbb;
+    line-height: 1.6;
+  }
+  #tutorial-card .code {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    color: #00f2fe;
+  }
+  .hidden {
+    opacity: 0 !important;
+    pointer-events: none;
+    transform: translate(-50%, -45%) scale(0.95) !important;
+  }
+
+  /* ── Chat Messages ─────────────────────────────────────────────────────── */
+  #chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 100vh;
+    overflow: hidden;
+    padding-top: 90px; /* Space for control panel */
+    z-index: 10;
+  }
+
+  /* Mode OBS: sembunyikan control panel dan tutorial */
+  body.obs-mode #control-panel { display: none; }
+  body.obs-mode #tutorial-card { display: none; }
+  body.obs-mode #chat-container { padding-top: 0; }
+
+  .chat-msg {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: rgba(15, 15, 15, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-left: 4px solid #00f2fe;
+    border-radius: 12px;
+    padding: 14px 18px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+    max-width: 500px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
+  }
+
+  .chat-msg.sys-msg {
+    border-left-color: #ff0050;
+    background: rgba(255, 0, 80, 0.1);
+  }
+
+  .chat-msg.speaking {
+    border-left-color: #4ade80;
+    background: rgba(74, 222, 128, 0.05);
+    box-shadow: 0 0 20px rgba(74, 222, 128, 0.2);
+    transform: translateX(10px);
+  }
+
+  .chat-msg.removing {
+    animation: slideOut 0.4s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-30px) scale(0.9); }
+    to   { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  @keyframes slideOut {
+    from { opacity: 1; transform: translateX(0) scale(1); height: auto; margin-bottom: 12px; }
+    to   { opacity: 0; transform: translateX(-30px) scale(0.9); height: 0; margin-bottom: 0; padding: 0; border: 0; }
+  }
+
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ff0050, #00f2fe);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    box-shadow: 0 4px 10px rgba(0, 242, 254, 0.3);
+  }
+
+  .msg-body { flex: 1; min-width: 0; }
+
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .username {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+    letter-spacing: 0.5px;
+  }
+
+  .sys-msg .username { color: #ff0050; }
+
+  .tts-icon {
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+    padding: 4px;
+  }
+  .speaking .tts-icon { opacity: 1; animation: pulse 0.8s ease infinite alternate; background: rgba(74, 222, 128, 0.2); }
+
+  @keyframes pulse {
+    from { transform: scale(0.9); }
+    to   { transform: scale(1.1); box-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
+  }
+
+  .comment {
+    font-size: 15px;
+    color: #ddd;
+    line-height: 1.5;
+    word-break: break-word;
+    font-weight: 300;
+  }
+
+  /* ── Queue badge ───────────────────────────────────────────────────────── */
+  #queue-badge {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    display: none;
+    font-weight: 600;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    z-index: 1000;
+  }
+  #queue-badge.visible { display: block; animation: popIn 0.3s ease; }
+  
+  @keyframes popIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+</style>
 </head>
 <body>
-    
-    <div id="btn-container">
-        <button id="startTts">Aktifkan Suara di OBS (Klik Saya!)</button>
+
+<!-- CONTROL PANEL -->
+<div id="control-panel">
+  <input id="username-input" type="text" placeholder="Masukkan Username TikTok..." />
+  <button id="btn-start" onclick="startListening()">Mulai Mendengarkan</button>
+  <button id="btn-stop" onclick="stopListening()">Stop</button>
+  <div id="status-text">Menunggu input...</div>
+</div>
+
+<!-- TUTORIAL CARD -->
+<div id="tutorial-card">
+  <h1>TikTok Live Chat Reader</h1>
+  <p>Selamat datang! Alat ini akan membaca chat dari TikTok Live Anda dan mengubahnya menjadi suara (TTS) secara otomatis.</p>
+  <p><strong>Cara Penggunaan:</strong></p>
+  <ul>
+    <li>Masukkan Username TikTok yang sedang Live di panel atas.</li>
+    <li>Klik <strong>Mulai Mendengarkan</strong>. Chat akan mulai bermunculan dan suara akan diputar.</li>
+  </ul>
+  <p><strong>Integrasi OBS:</strong></p>
+  <ul>
+    <li>Tambahkan Browser Source di OBS dan masukkan URL: <span class="code">http://localhost:3000/?obs=1</span></li>
+    <li>Parameter <span class="code">?obs=1</span> akan menyembunyikan panel kontrol dan tutorial agar background menjadi transparan.</li>
+  </ul>
+  <p><strong>Dukungan Lavalink:</strong></p>
+  <ul>
+    <li>Alat ini juga menyediakan endpoint audio untuk bot musik/Lavalink pada: <span class="code">/audio/:id.mp3</span></li>
+  </ul>
+</div>
+
+<div id="chat-container"></div>
+<div id="queue-badge"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ── Deteksi mode OBS via URL param ?obs=1 ──────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+if (params.get('obs') === '1') {
+  document.body.classList.add('obs-mode');
+}
+
+const socket = io();
+const chatContainer = document.getElementById('chat-container');
+const statusEl = document.getElementById('status-text');
+const queueBadge = document.getElementById('queue-badge');
+const tutorialCard = document.getElementById('tutorial-card');
+
+const MAX_MESSAGES = 6;
+const TTS_QUEUE = [];
+let isSpeaking = false;
+
+socket.on('sys-message', (msg) => {
+  const isErr = msg.toLowerCase().includes('gagal') || msg.toLowerCase().includes('tidak valid');
+  statusEl.textContent = msg;
+  statusEl.className = isErr ? 'err' : 'ok';
+  
+  if (msg.includes('Aktif!') || msg.includes('Tersambung')) {
+    tutorialCard.classList.add('hidden');
+  }
+  
+  // Tampilkan sebagai sistem message di chat container
+  addSystemMessage("Sistem", msg);
+});
+
+socket.on('chat', (data) => {
+  addMessage(data);
+});
+
+const autoUsername = params.get('username') || params.get('u');
+if (autoUsername) {
+  setTimeout(() => {
+    socket.emit('set-username', autoUsername);
+    statusEl.textContent = 'Menghubungkan otomatis...';
+    tutorialCard.classList.add('hidden');
+  }, 500);
+}
+
+function addSystemMessage(user, text) {
+  const msgEl = createMsgElement({username: user, comment: text, isSystem: true});
+  chatContainer.appendChild(msgEl);
+  pruneMessages();
+}
+
+function addMessage(data) {
+  const msgEl = createMsgElement(data);
+  chatContainer.appendChild(msgEl);
+  pruneMessages();
+
+  if (data.audioData) {
+    TTS_QUEUE.push({ audioData: data.audioData, element: msgEl });
+    updateQueueBadge();
+    if (!isSpeaking) processQueue();
+  }
+}
+
+function pruneMessages() {
+  const msgs = chatContainer.querySelectorAll('.chat-msg');
+  if (msgs.length > MAX_MESSAGES) {
+    const oldest = msgs[0];
+    oldest.classList.add('removing');
+    setTimeout(() => oldest.remove(), 400);
+  }
+}
+
+function createMsgElement(data) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (data.isSystem ? ' sys-msg' : '');
+  div.dataset.msgId = Date.now() + Math.random();
+
+  const initial = (data.username || '?')[0].toUpperCase();
+
+  div.innerHTML = `
+    <div class="avatar">${initial}</div>
+    <div class="msg-body">
+      <div class="msg-header">
+        <span class="username">${escHtml(data.username)}</span>
+        ${!data.isSystem ? '<span class="tts-icon">🔊</span>' : ''}
+      </div>
+      <div class="comment">${escHtml(data.comment)}</div>
     </div>
+  `;
+  return div;
+}
 
-    <div id="chatBox"></div>
+function processQueue() {
+  if (TTS_QUEUE.length === 0) {
+    isSpeaking = false;
+    updateQueueBadge();
+    return;
+  }
 
-    <script>
-        const socket = io();
-        const chatBox = document.getElementById('chatBox');
-        const btnTts = document.getElementById('startTts');
-        
-        let ttsEnabled = false;
-        let audioQueue = [];
-        let isPlaying = false;
+  isSpeaking = true;
+  const { audioData, element } = TTS_QUEUE.shift();
+  updateQueueBadge();
 
-        // Ambil param URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const targetUsername = urlParams.get('username');
+  if(element && document.body.contains(element)) {
+      element.classList.add('speaking');
+  }
 
-        if (targetUsername) {
-            socket.emit('set-username', targetUsername);
-        } else {
-            addMessage("Sistem", "URL tidak valid. Gunakan ?username=namaakun", true);
-        }
+  const audio = new Audio(audioData);
+  audio.onended = () => {
+    if(element) element.classList.remove('speaking');
+    processQueue();
+  };
+  audio.onerror = () => {
+    if(element) element.classList.remove('speaking');
+    processQueue();
+  };
+  audio.play().catch(() => {
+    if(element) element.classList.remove('speaking');
+    processQueue();
+  });
+}
 
-        // Aktifkan Audio lewat Interaksi
-        btnTts.addEventListener('click', () => {
-            ttsEnabled = true;
-            btnTts.style.display = 'none'; // Sembunyikan tombol setelah diklik agar tidak mengganggu layar stream
-            addMessage("Sistem", "🔊 Suara Google TTS Berhasil Diaktifkan!", true);
-        });
+function updateQueueBadge() {
+  const len = TTS_QUEUE.length;
+  if (len > 0) {
+    queueBadge.textContent = `🔊 Antrian Audio: ${len}`;
+    queueBadge.classList.add('visible');
+  } else {
+    queueBadge.classList.remove('visible');
+  }
+}
 
-        // Pemutar Antrean Audio
-        function playNextAudio() {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                return;
-            }
+function startListening() {
+  const val = document.getElementById('username-input').value.trim();
+  if (!val) {
+    statusEl.textContent = '⚠️ Masukkan Username TikTok terlebih dahulu.';
+    statusEl.className = 'err';
+    return;
+  }
+  statusEl.textContent = 'Menghubungkan...';
+  statusEl.className = '';
+  // Menggunakan event 'set-username' sesuai dengan index.js Project 37
+  socket.emit('set-username', val);
+}
 
-            isPlaying = true;
-            const audioData = audioQueue.shift();
+function stopListening() {
+  // TikTok bot tidak memiliki event stop di backend saat ini, 
+  // kita disconnect socketnya dan muat ulang halaman.
+  socket.disconnect();
+  statusEl.textContent = 'Dihentikan. Memuat ulang...';
+  statusEl.className = '';
+  setTimeout(() => {
+      window.location.reload();
+  }, 1000);
+}
 
-            const audio = new Audio(audioData);
-            audio.onended = playNextAudio;
-            audio.onerror = () => {
-                console.error("Gagal memutar audio base64");
-                playNextAudio();
-            };
+document.getElementById('username-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') startListening();
+});
 
-            audio.play().catch(e => {
-                console.error("Autoplay OBS terblokir. Sudah klik Interact?", e);
-                playNextAudio();
-            });
-        }
-
-        function addMessage(user, text, isSystem = false) {
-            const div = document.createElement('div');
-            div.className = 'chat-msg' + (isSystem ? ' sys-msg' : '');
-            div.innerHTML = `<strong>${user}:</strong> ${text}`;
-            chatBox.appendChild(div);
-
-            // Auto hapus chat lama agar tidak memberatkan OBS (maksimal tampil 10 chat terakhir)
-            if (chatBox.children.length > 10) {
-                chatBox.removeChild(chatBox.firstChild);
-            }
-        }
-
-        socket.on('sys-message', (msg) => {
-            addMessage("Sistem", msg, true);
-        });
-
-        socket.on('chat', (data) => {
-            // 1. Tampilkan di layar OBS
-            addMessage(data.username, data.comment);
-
-            // 2. Mainkan suara jika sudah diaktifkan dan ada data audio dari server
-            if (ttsEnabled && data.audioData) {
-                audioQueue.push(data.audioData);
-                if (!isPlaying) {
-                    playNextAudio();
-                }
-            }
-        });
-    </script>
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
 </body>
 </html>

@@ -10,6 +10,19 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
+// ─── Endpoint & Cache untuk dukungan Lavalink Streaming ───────────────────────
+const CACHE_TIMEOUT = parseInt(process.env.CACHE_TIMEOUT) || 300000;
+const audioCache = new Map();
+
+app.get('/audio/:id.mp3', (req, res) => {
+    const id = req.params.id;
+    const audioBuffer = audioCache.get(id);
+    if (!audioBuffer) {
+        return res.status(404).send('Audio not found or expired');
+    }
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(audioBuffer);
+});
 io.on('connection', (socket) => {
     console.log(`[INFO] Client terhubung: ${socket.id}`);
     let tiktokLiveConnection = null;
@@ -33,6 +46,7 @@ io.on('connection', (socket) => {
 
         tiktokLiveConnection.on('chat', async (data) => {
             let audioBase64 = null;
+            let audioUrl = null;
             
             try {
                 // Teks yang akan dibacakan (Maksimal 200 karakter agar Google tidak error)
@@ -45,6 +59,16 @@ io.on('connection', (socket) => {
                     host: 'https://translate.google.com',
                     timeout: 10000,
                 });
+                
+                if (audioBase64) {
+                    const audioId = Date.now() + '-' + Math.round(Math.random() * 10000);
+                    audioCache.set(audioId, Buffer.from(audioBase64, 'base64'));
+                    // Hapus cache sesuai timeout agar memori tidak penuh
+                    setTimeout(() => {
+                        audioCache.delete(audioId);
+                    }, CACHE_TIMEOUT);
+                    audioUrl = `/audio/${audioId}.mp3`;
+                }
             } catch (err) {
                 console.error("[TTS Error] Gagal memuat suara:", err.message);
             }
@@ -53,7 +77,8 @@ io.on('connection', (socket) => {
             socket.emit('chat', { 
                 username: data.uniqueId, 
                 comment: data.comment,
-                audioData: audioBase64 ? `data:audio/mp3;base64,${audioBase64}` : null
+                audioData: audioBase64 ? `data:audio/mp3;base64,${audioBase64}` : null,
+                audioUrl: audioUrl
             });
         });
     });
