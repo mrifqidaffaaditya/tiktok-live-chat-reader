@@ -13,6 +13,7 @@
     "express": "^5.2.1",
     "google-tts-api": "^2.0.2",
     "socket.io": "^4.8.3",
-    "tiktok-live-connector": "^2.1.1-beta1"
+    "tiktok-live-connector": "^2.1.1-beta1",
+    "ws": "^8.20.0"
   }
 }
