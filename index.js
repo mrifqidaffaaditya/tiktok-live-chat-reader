@@ -80,6 +80,10 @@ const wss = new WebSocketServer({ noServer: true });
 // Key '*' digunakan untuk client yang ingin menerima SEMUA stream
 const wsSessionMap = new Map();
 
+// ─── Auto-Connect: Shared Live Sessions ───────────────────────────────────────
+// Map: streamKey → { connection: WebcastPushConnection, refCount: number, status: string }
+const liveSessionMap = new Map();
+
 // FIX: Rate limiting koneksi WS per IP — cegah flood
 const WS_MAX_CONNECTIONS_PER_IP = 10;
 const wsIpCount = new Map();
@@ -135,6 +139,118 @@ server.on('upgrade', (request, socket, head) => {
     }
 });
 
+/**
+ * Mulai koneksi TikTok Live untuk streamKey tertentu (shared/reference-counted).
+ */
+function startLiveSession(streamKey) {
+    if (liveSessionMap.has(streamKey)) {
+        // Sudah ada session, increment refCount
+        const session = liveSessionMap.get(streamKey);
+        session.refCount++;
+        console.log(`[WS-Auto] Reuse session untuk @${streamKey} (refCount: ${session.refCount})`);
+        return;
+    }
+
+    // Validasi username TikTok
+    if (!/^[a-zA-Z0-9_.]+$/.test(streamKey)) {
+        console.warn(`[WS-Auto] Stream key tidak valid sebagai username TikTok: ${streamKey}`);
+        return;
+    }
+
+    console.log(`[WS-Auto] Memulai koneksi TikTok Live untuk @${streamKey}...`);
+
+    const connection = new WebcastPushConnection(streamKey);
+    const session = { connection, refCount: 1, status: 'connecting' };
+    liveSessionMap.set(streamKey, session);
+
+    // Broadcast status ke semua WS subscriber
+    const notifySubscribers = (msg) => {
+        broadcastToWsClients({ type: 'status', message: msg, stream: streamKey }, streamKey);
+    };
+
+    notifySubscribers(`⏳ Menghubungkan ke @${streamKey}...`);
+
+    connection.on('error', (err) => {
+        console.error(`[WS-Auto] TikTok Error @${streamKey}:`, sanitizeString(err.message, 200));
+    });
+
+    connection.on('disconnected', () => {
+        console.log(`[WS-Auto] TikTok Live disconnected @${streamKey}`);
+        notifySubscribers(`⚠️ Koneksi ke @${streamKey} terputus.`);
+        liveSessionMap.delete(streamKey);
+    });
+
+    connection.on('chat', async (data) => {
+        // Pastikan session masih aktif
+        if (!liveSessionMap.has(streamKey)) return;
+
+        const username = sanitizeString(
+            String(data.uniqueId || '').replace(/^@/, ''),
+            MAX_USERNAME_LENGTH
+        );
+        const comment = sanitizeString(String(data.comment || ''), MAX_COMMENT_LENGTH);
+        if (!comment) return;
+
+        console.log(`[CHAT] ${username}: ${comment}`);
+
+        let audioBase64 = null;
+        let audioUrl = null;
+
+        try {
+            const textToSpeak = `${username} berkata, ${comment}`.substring(0, 200);
+            audioBase64 = await googleTTS.getAudioBase64(textToSpeak, {
+                lang: 'id', slow: false, host: 'https://translate.google.com', timeout: 10000,
+            });
+            if (audioBase64) {
+                const audioId = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+                audioCache.set(audioId, Buffer.from(audioBase64, 'base64'));
+                setTimeout(() => { audioCache.delete(audioId); }, CACHE_TIMEOUT);
+                audioUrl = `/audio/${audioId}.mp3`;
+            }
+        } catch (err) {
+            console.error('[TTS Error]', sanitizeString(err.message, 200));
+        }
+
+        const chatPayload = {
+            type: 'chat',
+            platform: 'tiktok',
+            stream: streamKey,
+            username,
+            comment,
+            audioUrl,
+        };
+
+        broadcastToWsClients(chatPayload, streamKey);
+    });
+
+    connection.connect().then(() => {
+        console.log(`[WS-Auto] ✅ Tersambung ke @${streamKey}`);
+        session.status = 'connected';
+        notifySubscribers(`✅ Terhubung ke @${streamKey}`);
+    }).catch(err => {
+        console.error(`[WS-Auto] ❌ Gagal ke @${streamKey}:`, sanitizeString(err.message, 200));
+        notifySubscribers(`❌ Gagal terhubung ke @${streamKey}. Pastikan akun sedang Live.`);
+        liveSessionMap.delete(streamKey);
+    });
+}
+
+/**
+ * Hentikan koneksi TikTok Live jika refCount mencapai 0.
+ */
+function stopLiveSessionIfEmpty(streamKey) {
+    const session = liveSessionMap.get(streamKey);
+    if (!session) return;
+
+    session.refCount--;
+    console.log(`[WS-Auto] refCount @${streamKey}: ${session.refCount}`);
+
+    if (session.refCount <= 0) {
+        console.log(`[WS-Auto] Semua client disconnect, menghentikan @${streamKey}`);
+        try { session.connection.disconnect(); } catch (e) {}
+        liveSessionMap.delete(streamKey);
+    }
+}
+
 wss.on('connection', (ws) => {
     const streamKey = ws._streamKey;
     const ip = ws._ip || 'unknown';
@@ -152,6 +268,24 @@ wss.on('connection', (ws) => {
         // Abaikan jika koneksi sudah tutup sebelum send selesai
     }
 
+    // ─── Auto-Connect: Langsung mulai koneksi TikTok Live ─────────────────────
+    if (streamKey !== '*') {
+        startLiveSession(streamKey);
+    }
+
+    // ─── Handle pesan dari WS client ──────────────────────────────────────────
+    ws.on('message', (rawMsg) => {
+        try {
+            const msg = JSON.parse(rawMsg.toString());
+            if (msg.action === 'stop' && streamKey !== '*') {
+                console.log(`[WS] Client ${ip} mengirim stop untuk @${streamKey}`);
+                stopLiveSessionIfEmpty(streamKey);
+            }
+        } catch (e) {
+            // Abaikan pesan non-JSON
+        }
+    });
+
     ws.on('close', () => {
         console.log(`[WS] Client terputus: ${ip} (stream: ${streamKey})`);
         removeWsClient(ws, streamKey);
@@ -159,6 +293,11 @@ wss.on('connection', (ws) => {
         const count = wsIpCount.get(ip) || 1;
         if (count <= 1) wsIpCount.delete(ip);
         else wsIpCount.set(ip, count - 1);
+
+        // Auto-cleanup: hentikan live jika tidak ada subscriber lagi
+        if (streamKey !== '*') {
+            stopLiveSessionIfEmpty(streamKey);
+        }
     });
 
     ws.on('error', (err) => {
@@ -167,6 +306,11 @@ wss.on('connection', (ws) => {
         const count = wsIpCount.get(ip) || 1;
         if (count <= 1) wsIpCount.delete(ip);
         else wsIpCount.set(ip, count - 1);
+
+        // Auto-cleanup
+        if (streamKey !== '*') {
+            stopLiveSessionIfEmpty(streamKey);
+        }
     });
 });
 
