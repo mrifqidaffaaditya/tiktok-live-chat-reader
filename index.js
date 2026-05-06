@@ -15,6 +15,7 @@ app.use(express.static('public'));
 
 // ─── Konstanta & Validasi Config ──────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT) || 3000;
+const DEBUG_MODE = process.env.DEBUG ? process.env.DEBUG.toLowerCase() : '';
 
 // FIX: Validasi CACHE_TIMEOUT — jika NaN atau tidak wajar, fallback ke default
 const _rawCacheTimeout = parseInt(process.env.CACHE_TIMEOUT);
@@ -100,6 +101,57 @@ function removeWsClient(ws, streamKey) {
     if (set) {
         set.delete(ws);
         if (set.size === 0) wsSessionMap.delete(streamKey);
+    }
+}
+
+// ─── Logger Helpers ───────────────────────────────────────────────────────────
+function getWsClientCount(streamKey) {
+    if (streamKey === '*') {
+        const allClients = wsSessionMap.get('*');
+        return allClients ? allClients.size : 0;
+    }
+    const clients = wsSessionMap.get(streamKey);
+    return clients ? clients.size : 0;
+}
+
+function getTotalWsClientCount() {
+    let total = 0;
+    for (const clients of wsSessionMap.values()) {
+        total += clients.size;
+    }
+    return total;
+}
+
+function logWsConnection(action, ip, streamKey) {
+    if (DEBUG_MODE === 'all' || DEBUG_MODE === 'connection') {
+        const streamCount = getWsClientCount(streamKey);
+        const totalCount = getTotalWsClientCount();
+        console.log(`[DEBUG-CONN] ${action} | IP: ${ip} | Stream: @${streamKey} | Stream Clients: ${streamCount} | Total WS Clients: ${totalCount}`);
+    } else {
+        if (action === 'CONNECTED') console.log(`[WS] Client terhubung: ${ip} (stream: ${streamKey})`);
+        else if (action === 'DISCONNECTED') console.log(`[WS] Client terputus: ${ip} (stream: ${streamKey})`);
+    }
+}
+
+function logIoConnection(action, socketId, targetUsername = null) {
+    if (DEBUG_MODE === 'all' || DEBUG_MODE === 'connection') {
+        const totalCount = io.engine.clientsCount;
+        const streamInfo = targetUsername ? ` | Stream: @${targetUsername}` : '';
+        console.log(`[DEBUG-CONN] Socket.IO ${action} | ID: ${socketId}${streamInfo} | Total IO Clients: ${totalCount}`);
+    } else {
+        if (action === 'CONNECTED') console.log(`[INFO] Client terhubung: ${socketId}`);
+        else if (action === 'DISCONNECTED') console.log(`[INFO] Client terputus: ${socketId}`);
+    }
+}
+
+function logChatInfo(platform, streamKey, username, comment, isSuperChat = false, amount = null) {
+    if (DEBUG_MODE === 'all') {
+        const streamCount = getWsClientCount(streamKey);
+        const superChatInfo = isSuperChat ? `[SUPERCHAT ${amount}] ` : '';
+        console.log(`[DEBUG-CHAT] [${platform.toUpperCase()} - @${streamKey}] | WS Clients: ${streamCount} | ${superChatInfo}${username}: ${comment}`);
+    } else {
+        const superChatInfo = isSuperChat ? `💛 SUPERCHAT ` : '';
+        console.log(`[CHAT] ${superChatInfo}${username}: ${comment}`);
     }
 }
 
@@ -191,7 +243,7 @@ function startLiveSession(streamKey) {
         const comment = sanitizeString(String(data.comment || ''), MAX_COMMENT_LENGTH);
         if (!comment) return;
 
-        console.log(`[CHAT] ${username}: ${comment}`);
+        logChatInfo('tiktok', streamKey, username, comment);
 
         let audioBase64 = null;
         let audioUrl = null;
@@ -254,8 +306,8 @@ function stopLiveSessionIfEmpty(streamKey) {
 wss.on('connection', (ws) => {
     const streamKey = ws._streamKey;
     const ip = ws._ip || 'unknown';
-    console.log(`[WS] Client terhubung: ${ip} (stream: ${streamKey})`);
     addWsClient(ws, streamKey);
+    logWsConnection('CONNECTED', ip, streamKey);
 
     // FIX: try/catch pada ws.send() untuk cegah crash jika koneksi sudah tutup
     try {
@@ -287,8 +339,8 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
-        console.log(`[WS] Client terputus: ${ip} (stream: ${streamKey})`);
         removeWsClient(ws, streamKey);
+        logWsConnection('DISCONNECTED', ip, streamKey);
         // FIX: Bersihkan counter IP
         const count = wsIpCount.get(ip) || 1;
         if (count <= 1) wsIpCount.delete(ip);
@@ -349,7 +401,7 @@ function broadcastToWsClients(payload, streamKey) {
 
 // ─── Socket.IO (untuk browser & Discord Bot) ──────────────────────────────────
 io.on('connection', (socket) => {
-    console.log(`[INFO] Client terhubung: ${socket.id}`);
+    logIoConnection('CONNECTED', socket.id);
     let tiktokLiveConnection = null;
 
     socket.on('set-username', (targetUsername) => {
@@ -479,7 +531,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log(`[INFO] Client terputus: ${socket.id}`);
+        logIoConnection('DISCONNECTED', socket.id, tiktokLiveConnection ? tiktokLiveConnection.roomId : null);
         if (tiktokLiveConnection) {
             try { tiktokLiveConnection.disconnect(); } catch (e) {}
             tiktokLiveConnection = null;
