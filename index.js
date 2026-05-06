@@ -149,6 +149,9 @@ function logChatInfo(platform, streamKey, username, comment, isSuperChat = false
         const streamCount = getWsClientCount(streamKey);
         const superChatInfo = isSuperChat ? `[SUPERCHAT ${amount}] ` : '';
         console.log(`[DEBUG-CHAT] [${platform.toUpperCase()} - @${streamKey}] | WS Clients: ${streamCount} | ${superChatInfo}${username}: ${comment}`);
+    } else if (DEBUG_MODE === 'connection') {
+        // Mute chat logs in connection mode
+        return;
     } else {
         const superChatInfo = isSuperChat ? `💛 SUPERCHAT ` : '';
         console.log(`[CHAT] ${superChatInfo}${username}: ${comment}`);
