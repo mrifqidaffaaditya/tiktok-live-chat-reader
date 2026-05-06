@@ -104,43 +104,57 @@ function removeWsClient(ws, streamKey) {
     }
 }
 
+const ioSessionMap = new Map();
+
+function addIoClient(socket, streamKey) {
+    if (!ioSessionMap.has(streamKey)) ioSessionMap.set(streamKey, new Set());
+    ioSessionMap.get(streamKey).add(socket);
+}
+
+function removeIoClient(socket, streamKey) {
+    const set = ioSessionMap.get(streamKey);
+    if (set) {
+        set.delete(socket);
+        if (set.size === 0) ioSessionMap.delete(streamKey);
+    }
+}
+
 // ─── Logger Helpers ───────────────────────────────────────────────────────────
 function getWsClientCount(streamKey) {
-    if (streamKey === '*') {
-        const allClients = wsSessionMap.get('*');
-        return allClients ? allClients.size : 0;
-    }
-    const clients = wsSessionMap.get(streamKey);
-    return clients ? clients.size : 0;
+    const allWs = wsSessionMap.get('*') ? wsSessionMap.get('*').size : 0;
+    const specificWs = wsSessionMap.get(streamKey) ? wsSessionMap.get(streamKey).size : 0;
+    const ioClients = ioSessionMap.get(streamKey) ? ioSessionMap.get(streamKey).size : 0;
+    return allWs + specificWs + ioClients;
 }
 
 function getTotalWsClientCount() {
     let total = 0;
-    for (const clients of wsSessionMap.values()) {
-        total += clients.size;
-    }
+    for (const clients of wsSessionMap.values()) total += clients.size;
+    for (const clients of ioSessionMap.values()) total += clients.size;
     return total;
 }
 
 function logWsConnection(action, ip, streamKey) {
+    const time = new Date().toISOString();
     if (DEBUG_MODE === 'all' || DEBUG_MODE === 'connection') {
         const streamCount = getWsClientCount(streamKey);
         const totalCount = getTotalWsClientCount();
-        console.log(`[DEBUG-CONN] ${action} | IP: ${ip} | Stream: @${streamKey} | Stream Clients: ${streamCount} | Total WS Clients: ${totalCount}`);
+        console.log(`[${time}] [DEBUG-CONN] ${action} | IP: ${ip} | Stream: @${streamKey} | Stream Clients: ${streamCount} | Total Clients: ${totalCount}`);
     } else {
-        if (action === 'CONNECTED') console.log(`[WS] Client terhubung: ${ip} (stream: ${streamKey})`);
-        else if (action === 'DISCONNECTED') console.log(`[WS] Client terputus: ${ip} (stream: ${streamKey})`);
+        if (action === 'CONNECTED') console.log(`[${time}] [WS] Client terhubung: ${ip} (stream: ${streamKey})`);
+        else if (action === 'DISCONNECTED') console.log(`[${time}] [WS] Client terputus: ${ip} (stream: ${streamKey})`);
     }
 }
 
 function logIoConnection(action, socketId, targetUsername = null) {
+    const time = new Date().toISOString();
     if (DEBUG_MODE === 'all' || DEBUG_MODE === 'connection') {
         const totalCount = io.engine.clientsCount;
         const streamInfo = targetUsername ? ` | Stream: @${targetUsername}` : '';
-        console.log(`[DEBUG-CONN] Socket.IO ${action} | ID: ${socketId}${streamInfo} | Total IO Clients: ${totalCount}`);
+        console.log(`[${time}] [DEBUG-CONN] Socket.IO ${action} | ID: ${socketId}${streamInfo} | Total IO Clients: ${totalCount}`);
     } else {
-        if (action === 'CONNECTED') console.log(`[INFO] Client terhubung: ${socketId}`);
-        else if (action === 'DISCONNECTED') console.log(`[INFO] Client terputus: ${socketId}`);
+        if (action === 'CONNECTED') console.log(`[${time}] [INFO] Client terhubung: ${socketId}`);
+        else if (action === 'DISCONNECTED') console.log(`[${time}] [INFO] Client terputus: ${socketId}`);
     }
 }
 
@@ -199,10 +213,7 @@ server.on('upgrade', (request, socket, head) => {
  */
 function startLiveSession(streamKey) {
     if (liveSessionMap.has(streamKey)) {
-        // Sudah ada session, increment refCount
-        const session = liveSessionMap.get(streamKey);
-        session.refCount++;
-        console.log(`[WS-Auto] Reuse session untuk @${streamKey} (refCount: ${session.refCount})`);
+        console.log(`[WS-Auto] Reuse session untuk @${streamKey}`);
         return;
     }
 
@@ -215,12 +226,18 @@ function startLiveSession(streamKey) {
     console.log(`[WS-Auto] Memulai koneksi TikTok Live untuk @${streamKey}...`);
 
     const connection = new WebcastPushConnection(streamKey);
-    const session = { connection, refCount: 1, status: 'connecting' };
+    const session = { connection, status: 'connecting' };
     liveSessionMap.set(streamKey, session);
 
-    // Broadcast status ke semua WS subscriber
+    // Broadcast status ke semua WS & IO subscriber
     const notifySubscribers = (msg) => {
         broadcastToWsClients({ type: 'status', message: msg, stream: streamKey }, streamKey);
+        const ioClients = ioSessionMap.get(streamKey);
+        if (ioClients) {
+            for (const socket of ioClients) {
+                socket.emit('sys-message', msg);
+            }
+        }
     };
 
     notifySubscribers(`⏳ Menghubungkan ke @${streamKey}...`);
@@ -275,7 +292,21 @@ function startLiveSession(streamKey) {
             audioUrl,
         };
 
+        const ioPayload = {
+            username,
+            comment,
+            audioData: audioBase64 ? `data:audio/mp3;base64,${audioBase64}` : null,
+            audioUrl,
+        };
+
         broadcastToWsClients(chatPayload, streamKey);
+
+        const ioClients = ioSessionMap.get(streamKey);
+        if (ioClients) {
+            for (const socket of ioClients) {
+                socket.emit('chat', ioPayload);
+            }
+        }
     });
 
     connection.connect().then(() => {
@@ -290,16 +321,20 @@ function startLiveSession(streamKey) {
 }
 
 /**
- * Hentikan koneksi TikTok Live jika refCount mencapai 0.
+ * Hentikan koneksi TikTok Live jika tidak ada client lagi.
  */
 function stopLiveSessionIfEmpty(streamKey) {
     const session = liveSessionMap.get(streamKey);
     if (!session) return;
 
-    session.refCount--;
-    console.log(`[WS-Auto] refCount @${streamKey}: ${session.refCount}`);
+    // Hitung jumlah client aktif secara dinamis (WS specific + IO specific)
+    const specificWsCount = wsSessionMap.get(streamKey) ? wsSessionMap.get(streamKey).size : 0;
+    const specificIoCount = ioSessionMap.get(streamKey) ? ioSessionMap.get(streamKey).size : 0;
+    const activeSubscribers = specificWsCount + specificIoCount;
 
-    if (session.refCount <= 0) {
+    console.log(`[WS-Auto] Active subscribers for @${streamKey}: ${activeSubscribers}`);
+
+    if (activeSubscribers <= 0) {
         console.log(`[WS-Auto] Semua client disconnect, menghentikan @${streamKey}`);
         try { session.connection.disconnect(); } catch (e) {}
         liveSessionMap.delete(streamKey);
@@ -405,10 +440,9 @@ function broadcastToWsClients(payload, streamKey) {
 // ─── Socket.IO (untuk browser & Discord Bot) ──────────────────────────────────
 io.on('connection', (socket) => {
     logIoConnection('CONNECTED', socket.id);
-    let tiktokLiveConnection = null;
+    let currentStreamKey = null;
 
     socket.on('set-username', (targetUsername) => {
-        // FIX: Validasi tipe dan keberadaan
         if (!targetUsername || typeof targetUsername !== 'string') {
             socket.emit('sys-message', '❌ Username tidak valid.');
             return;
@@ -419,13 +453,11 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // FIX: Batasi panjang username untuk cegah abuse
         if (targetUsername.length > MAX_USERNAME_LENGTH) {
             socket.emit('sys-message', '❌ Username terlalu panjang.');
             return;
         }
 
-        // FIX: Validasi karakter username TikTok — hanya alfanumerik, _, .
         if (!/^[a-zA-Z0-9_.]+$/.test(targetUsername)) {
             socket.emit('sys-message', '❌ Username mengandung karakter tidak valid.');
             return;
@@ -433,111 +465,42 @@ io.on('connection', (socket) => {
 
         console.log(`[INFO] Memantau live: ${targetUsername}`);
 
-        // Putuskan koneksi sebelumnya jika ada
-        if (tiktokLiveConnection) {
-            try { tiktokLiveConnection.disconnect(); } catch (e) {}
-            tiktokLiveConnection = null;
+        if (currentStreamKey) {
+            removeIoClient(socket, currentStreamKey);
+            stopLiveSessionIfEmpty(currentStreamKey);
         }
 
-        tiktokLiveConnection = new WebcastPushConnection(targetUsername);
-        const currentConnection = tiktokLiveConnection;
-
-        // Error handler agar unhandled error tidak crash server
-        currentConnection.on('error', (err) => {
-            console.error(`[TikTok Error] ${sanitizeString(err.message, 200)}`);
-        });
-
-        currentConnection.on('disconnected', () => {
-            console.log(`[INFO] TikTok Live disconnected untuk ${targetUsername}`);
-            socket.emit('sys-message', `⚠️ Koneksi ke @${targetUsername} terputus.`);
-            if (tiktokLiveConnection === currentConnection) {
-                tiktokLiveConnection = null;
+        currentStreamKey = targetUsername;
+        addIoClient(socket, currentStreamKey);
+        
+        const isNewSession = !liveSessionMap.has(currentStreamKey);
+        startLiveSession(currentStreamKey);
+        
+        if (!isNewSession) {
+            const session = liveSessionMap.get(currentStreamKey);
+            if (session && session.status === 'connected') {
+                socket.emit('sys-message', `✅ Terhubung ke @${currentStreamKey}`);
+            } else if (session && session.status === 'connecting') {
+                socket.emit('sys-message', `⏳ Menghubungkan ke @${currentStreamKey}...`);
             }
-        });
-
-        currentConnection.on('chat', async (data) => {
-            if (tiktokLiveConnection !== currentConnection) return;
-
-            // FIX: Sanitasi semua data dari TikTok sebelum diproses
-            const username = sanitizeString(
-                String(data.uniqueId || '').replace(/^@/, ''),
-                MAX_USERNAME_LENGTH
-            );
-            const comment = sanitizeString(String(data.comment || ''), MAX_COMMENT_LENGTH);
-
-            // FIX: Jangan proses jika komentar kosong setelah sanitasi
-            if (!comment) return;
-
-            let audioBase64 = null;
-            let audioUrl = null;
-
-            try {
-                // FIX: Gunakan comment yang sudah disanitasi untuk TTS
-                const textToSpeak = `${username} berkata, ${comment}`.substring(0, 200);
-
-                audioBase64 = await googleTTS.getAudioBase64(textToSpeak, {
-                    lang: 'id',
-                    slow: false,
-                    host: 'https://translate.google.com',
-                    timeout: 10000,
-                });
-
-                if (audioBase64) {
-                    // FIX: Gunakan crypto.randomBytes() untuk ID yang lebih kuat (hindari collision)
-                    const audioId = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
-                    audioCache.set(audioId, Buffer.from(audioBase64, 'base64'));
-                    setTimeout(() => { audioCache.delete(audioId); }, CACHE_TIMEOUT);
-                    audioUrl = `/audio/${audioId}.mp3`;
-                }
-            } catch (err) {
-                console.error('[TTS Error] Gagal memuat suara:', sanitizeString(err.message, 200));
-            }
-
-            // FIX: Payload hanya berisi data yang sudah disanitasi
-            const chatPayload = {
-                type: 'chat',
-                platform: 'tiktok',
-                stream: targetUsername,
-                username,
-                comment,
-                audioUrl,
-            };
-
-            socket.emit('chat', {
-                username,
-                comment,
-                audioData: audioBase64 ? `data:audio/mp3;base64,${audioBase64}` : null,
-                audioUrl,
-            });
-
-            broadcastToWsClients(chatPayload, targetUsername);
-        });
-
-        currentConnection.connect().then(() => {
-            console.log(`[BERHASIL] Tersambung ke room ${targetUsername}`);
-            socket.emit('sys-message', `Widget Aktif! Terhubung ke: @${targetUsername}`);
-        }).catch(err => {
-            console.error(`[GAGAL] ke ${targetUsername}`, sanitizeString(err.message, 200));
-            socket.emit('sys-message', `Gagal terhubung ke ${targetUsername}. Pastikan akun sedang Live.`);
-            if (tiktokLiveConnection === currentConnection) {
-                tiktokLiveConnection = null;
-            }
-        });
+        }
     });
 
     socket.on('stop', () => {
-        if (tiktokLiveConnection) {
-            try { tiktokLiveConnection.disconnect(); } catch (e) {}
-            tiktokLiveConnection = null;
+        if (currentStreamKey) {
+            removeIoClient(socket, currentStreamKey);
+            stopLiveSessionIfEmpty(currentStreamKey);
+            currentStreamKey = null;
         }
         socket.emit('sys-message', '⏹️ Pemantauan dihentikan.');
     });
 
     socket.on('disconnect', () => {
-        logIoConnection('DISCONNECTED', socket.id, tiktokLiveConnection ? tiktokLiveConnection.roomId : null);
-        if (tiktokLiveConnection) {
-            try { tiktokLiveConnection.disconnect(); } catch (e) {}
-            tiktokLiveConnection = null;
+        logIoConnection('DISCONNECTED', socket.id, currentStreamKey);
+        if (currentStreamKey) {
+            removeIoClient(socket, currentStreamKey);
+            stopLiveSessionIfEmpty(currentStreamKey);
+            currentStreamKey = null;
         }
     });
 });
