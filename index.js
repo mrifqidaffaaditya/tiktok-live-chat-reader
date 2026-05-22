@@ -29,6 +29,7 @@ const MAX_COMMENT_LENGTH = 300;
 const MAX_USERNAME_LENGTH = 100;
 
 const audioCache = new Map();
+const MAX_AUDIO_CACHE_SIZE = 200;
 
 // ─── Helper Sanitasi ──────────────────────────────────────────────────────────
 
@@ -211,8 +212,8 @@ server.on('upgrade', (request, socket, head) => {
 /**
  * Mulai koneksi TikTok Live untuk streamKey tertentu (shared/reference-counted).
  */
-function startLiveSession(streamKey) {
-    if (liveSessionMap.has(streamKey)) {
+function startLiveSession(streamKey, retryCount = 0) {
+    if (retryCount === 0 && liveSessionMap.has(streamKey)) {
         console.log(`[WS-Auto] Reuse session untuk @${streamKey}`);
         return;
     }
@@ -223,10 +224,11 @@ function startLiveSession(streamKey) {
         return;
     }
 
-    console.log(`[WS-Auto] Memulai koneksi TikTok Live untuk @${streamKey}...`);
+    console.log(`[WS-Auto] Memulai koneksi TikTok Live untuk @${streamKey}${retryCount > 0 ? ` (Retry: ${retryCount})` : ''}...`);
 
     const connection = new WebcastPushConnection(streamKey);
     const session = { connection, status: 'connecting' };
+    // Always replace connection in map for retries
     liveSessionMap.set(streamKey, session);
 
     // Broadcast status ke semua WS & IO subscriber
@@ -240,16 +242,39 @@ function startLiveSession(streamKey) {
         }
     };
 
-    notifySubscribers(`⏳ Menghubungkan ke @${streamKey}...`);
+    if (retryCount === 0) notifySubscribers(`⏳ Menghubungkan ke @${streamKey}...`);
+
+    let isReconnecting = false;
+    const scheduleReconnect = () => {
+        if (isReconnecting) return;
+        isReconnecting = true;
+        // If intentionally stopped, it won't be in map
+        if (!liveSessionMap.has(streamKey)) return;
+
+        if (retryCount < 10) {
+            const delay = Math.min(3000 * Math.pow(1.5, retryCount), 30000); // Max 30s
+            console.log(`[WS-Auto] Akan mencoba menyambung ulang ke @${streamKey} dalam ${delay}ms...`);
+            notifySubscribers(`⚠️ Koneksi terputus. Menyambung ulang... (${retryCount + 1}/10)`);
+            setTimeout(() => {
+                if (liveSessionMap.has(streamKey)) {
+                    startLiveSession(streamKey, retryCount + 1);
+                }
+            }, delay);
+        } else {
+            console.log(`[WS-Auto] Gagal menyambung ke @${streamKey} setelah 10 percobaan.`);
+            notifySubscribers(`❌ Gagal terhubung ke @${streamKey} secara permanen.`);
+            liveSessionMap.delete(streamKey);
+        }
+    };
 
     connection.on('error', (err) => {
         console.error(`[WS-Auto] TikTok Error @${streamKey}:`, sanitizeString(err.message, 200));
+        // We will rely on 'disconnected' event for reconnects
     });
 
     connection.on('disconnected', () => {
         console.log(`[WS-Auto] TikTok Live disconnected @${streamKey}`);
-        notifySubscribers(`⚠️ Koneksi ke @${streamKey} terputus.`);
-        liveSessionMap.delete(streamKey);
+        scheduleReconnect();
     });
 
     connection.on('chat', async (data) => {
@@ -275,6 +300,10 @@ function startLiveSession(streamKey) {
             });
             if (audioBase64) {
                 const audioId = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+                if (audioCache.size >= MAX_AUDIO_CACHE_SIZE) {
+                    const oldestKey = audioCache.keys().next().value;
+                    audioCache.delete(oldestKey);
+                }
                 audioCache.set(audioId, Buffer.from(audioBase64, 'base64'));
                 setTimeout(() => { audioCache.delete(audioId); }, CACHE_TIMEOUT);
                 audioUrl = `/audio/${audioId}.mp3`;
@@ -312,11 +341,14 @@ function startLiveSession(streamKey) {
     connection.connect().then(() => {
         console.log(`[WS-Auto] ✅ Tersambung ke @${streamKey}`);
         session.status = 'connected';
-        notifySubscribers(`✅ Terhubung ke @${streamKey}`);
+        if (retryCount > 0) {
+            notifySubscribers(`✅ Berhasil tersambung kembali ke @${streamKey}!`);
+        } else {
+            notifySubscribers(`✅ Terhubung ke @${streamKey}`);
+        }
     }).catch(err => {
         console.error(`[WS-Auto] ❌ Gagal ke @${streamKey}:`, sanitizeString(err.message, 200));
-        notifySubscribers(`❌ Gagal terhubung ke @${streamKey}. Pastikan akun sedang Live.`);
-        liveSessionMap.delete(streamKey);
+        scheduleReconnect();
     });
 }
 
@@ -336,8 +368,8 @@ function stopLiveSessionIfEmpty(streamKey) {
 
     if (activeSubscribers <= 0) {
         console.log(`[WS-Auto] Semua client disconnect, menghentikan @${streamKey}`);
+        liveSessionMap.delete(streamKey); // Delete first to prevent auto-reconnect
         try { session.connection.disconnect(); } catch (e) {}
-        liveSessionMap.delete(streamKey);
     }
 }
 

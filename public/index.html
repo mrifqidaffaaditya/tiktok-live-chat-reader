@@ -395,18 +395,17 @@ function processQueue() {
   }
 
   const audio = new Audio(audioData);
-  audio.onended = () => {
+  let handled = false;
+  const next = () => {
+    if (handled) return;
+    handled = true;
     if(element) element.classList.remove('speaking');
     processQueue();
   };
-  audio.onerror = () => {
-    if(element) element.classList.remove('speaking');
-    processQueue();
-  };
-  audio.play().catch(() => {
-    if(element) element.classList.remove('speaking');
-    processQueue();
-  });
+
+  audio.onended = next;
+  audio.onerror = next;
+  audio.play().catch(next);
 }
 
 function updateQueueBadge() {
